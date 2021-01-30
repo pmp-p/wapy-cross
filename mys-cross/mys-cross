@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+
+import sys
+import os
+import sysconfig
+import re
+
+# will syntax error on old py but stops with a bit of an explanation.
+if 0:
+    print(f"{'mys-cross requires Python 3.9 on GNU/Linux and a valid _PYTHON_SYSCONFIGDATA_NAME for the target'=}")
+
+
+MYS_ROOT = os.path.dirname(os.path.realpath(__file__))
+
+BUILD = sysconfig.get_config_var('BUILD_GNU_TYPE')
+
+HOST= sysconfig.get_platform()
+
+
+req = []
+last_fail = 0
+
+if not 'linux' in BUILD:
+    req.append(f'Only GNU/Linux build+host is supported, found {BUILD}')
+
+
+# maybe mys not built yet
+os.makedirs(f"{MYS_ROOT}/build", exist_ok=True)
+
+BUILD_DIR=f"{MYS_ROOT}/build/lib.{HOST}-{sys.version_info.major}.{sys.version_info.minor}"
+
+if 1:
+    if not os.path.exists(BUILD_DIR):
+        print('Building mys !')
+    else:
+        print('Re-building mys !')
+    os.system(f'cd "{MYS_ROOT}" && {sys.executable} -u -B setup.py build >/dev/null')
+
+
+TARGET = os.environ.get('TARGET', sysconfig.get_config_var('MULTIARCH') )
+
+def envset(env:str, value:str):
+    globals()[env] = value
+    if globals()[env] != os.environ.get(env):
+        os.environ[env] = globals()[env]
+
+
+
+# _PYTHON_HOST_PLATFORM = TARGET ???!!!
+_PYTHON_HOST_PLATFORM=""
+
+for envdef in f"""
+
+#_PYTHON_HOST_PLATFORM={TARGET}
+_PYTHON_SYSCONFIGDATA_NAME=
+PYTHONPYCACHEPREFIX={MYS_ROOT}/build/PYTHONPYCACHEPREFIX
+PREFIX={MYS_ROOT}/build/{TARGET}
+PYTHONDONTWRITEBYTECODE=1
+
+""".strip().split('\n'):
+
+    env, default = map(str.strip,envdef.split('='))
+    if env.startswith('#'):
+        continue
+    envset( env, os.environ.get(env,default) )
+
+
+if (not TARGET) or ('linux' in TARGET):
+    req.append(f"Missing {TARGET=}, {_PYTHON_SYSCONFIGDATA_NAME=} or the target '{TARGET}' is not valid for cross compilation")
+
+
+
+TMPL_SUFFIX=".template"
+TMPL_ROOT = f"{MYS_ROOT}/mys/cross/targets/{TARGET}"
+TMPL = f"{TMPL_ROOT}{TMPL_SUFFIX}"
+
+
+if not os.environ.get('PREFIX'):
+    PREFIX=''
+    req.append(f"Wrong {PREFIX=}, need to know where to put compiled binaries")
+
+
+if _PYTHON_SYSCONFIGDATA_NAME:
+    # was user defined
+    pass
+elif not os.path.isfile(TMPL) and not _PYTHON_SYSCONFIGDATA_NAME:
+    req.append(f"template '{TARGET}' for _PYTHON_SYSCONFIGDATA_NAME not found at {TMPL}")
+else:
+    # convert the template to a valid sysconfigdata if not already user set
+    sysdata_file = f"sysconfigdata_{os.path.basename(TMPL)}"
+    sysdata_mod = sysdata_file[:-len(TMPL_SUFFIX)]
+
+    envset('_PYTHON_SYSCONFIGDATA_NAME', sysdata_mod )
+    with open(f"{BUILD_DIR}/{sysdata_mod}.py","w") as fout:
+        with open(TMPL,"r") as fin:
+            fout.write( fin.read( ))
+
+# copy target support files over standard native from Mys build
+os.system(f"/bin/cp -aRvfxp '{TMPL_ROOT}/.' '{BUILD_DIR}/mys/'")
+
+
+print(f"""
+-----------------------------------------
+{MYS_ROOT=}
+{HOST=}
+{BUILD=}
+{TARGET=}
+{PREFIX=}
+{_PYTHON_HOST_PLATFORM=}
+{_PYTHON_SYSCONFIGDATA_NAME=}
+{PYTHONPYCACHEPREFIX=}
+{PYTHONDONTWRITEBYTECODE=}
+{TMPL=}
+-----------------------------------------
+""")
+
+
+os.makedirs(PYTHONPYCACHEPREFIX, exist_ok=True)
+os.makedirs(PREFIX, exist_ok=True)
+
+
+def fail(err=None):
+    global last_fail
+
+    if err is not None:
+        req.append(err)
+        return 1
+    else:
+        if req:
+            for i,r in enumerate(req):
+                if i <last_fail :
+                    continue
+                print(f'FATAL: {r}')
+        try:
+            if len(req)>last_fail:
+                return len(req)-last_fail
+        finally:
+            last_fail = len(req)
+
+# report various missing parameters
+fail()
+
+
+# python3 -m pip install --user toml ansicolors yaspin humanfriendly pygments
+
+requirements = 'toml colors@ansicolors yaspin humanfriendly pygments'
+missing = []
+
+for requirement in requirements.split(' '):
+    try:
+        __import__(requirement.split('@')[0])
+    except:
+        missing.append(requirement.rsplit('@')[-1])
+        req.append(f'missing module {requirement}')
+
+
+# report pip missings and try to fix
+if fail():
+    os.system(f'{sys.executable} -u -B -m pip install --user {" ".join(missing)}')
+
+# if at least one error - even if maybe pip fixed - force a restart.
+if req:
+    raise SystemExit
+
+
+
+
+sys.path.insert(0, BUILD_DIR)
+
+del sys.modules['sysconfig']
+import importlib
+importlib.invalidate_caches()
+
+import sysconfig
+
+
+
+
+from mys.cross import preprocessor as pp
+
+
+
+
+
+
+
+EMFLAGS = ""
+
+if '-fpic' in sysconfig.get_config_var('CFLAGS'):
+    PIC='-fPIC'
+else:
+    PIC=''
+
+#('wasm' in TARGET)
+
+
+if ('wasi' in TARGET):
+    PIC='-fPIC -fno-exceptions'
+    os.environ['MYS_LD'] = '/data/cross/pydk/wasm/apkroot-wasm/usr/lib/libpcre2-32.a'
+    os.environ['EXE_SUFFIX'] = ".wasi"
+elif ('emscripten' in TARGET) :
+    os.environ['MYS_LD'] = '/data/cross/pydk/wasm/apkroot-wasm/usr/lib/libpcre2-32.a'
+    os.environ['THIRD_PARTIES'] = '/data/cross/pydk/wasm/apkroot-wasm/usr/lib'
+    os.environ['CC'] = 'emcc'
+    EMFLAGS="-s DISABLE_EXCEPTION_CATCHING=0  -s USE_SDL=2 -s USE_SDL_TTF=2 -s USE_SDL_IMAGE=2"
+    EMFLAGS=f"{EMFLAGS} -s LLD_REPORT_UNDEFINED"
+    EMFLAGS=f"{EMFLAGS} -s NO_EXIT_RUNTIME=1"
+    EMFLAGS=f"{EMFLAGS} --memory-init-file 0  --preload-file ./assets"
+
+
+    os.environ['CXX'] = f"em++ {EMFLAGS} -I/data/cross/pydk/emsdk/upstream/emscripten/cache/wasm/include"
+    print(f' * cross-compilation TARGET={TARGET}')
+    os.environ['EXE_SUFFIX'] = ".html"
+else:
+    os.environ['MYS_LD'] = f'-L{BUILD_DIR}/mys/lib/3pp/lib -lpcre2-32 -luv -lpthread -ldl'
+    os.environ['MYS_LD'] += ' -L/opt/sdk/sdl2/lib -lSDL2 -lSDL2_image -lSDL2_ttf'
+    os.environ['THIRD_PARTIES'] = f'{BUILD_DIR}/mys/lib/3pp/lib'
+    os.environ['EXE_SUFFIX'] = ""
+    print(' * native build')
+
+
+
+
+
+if os.environ.get('PYTHONPATH', None):
+    ppath = f"{BUILD_DIR}:{os.environ['PYTHONPATH']}"
+else:
+    ppath = f"{BUILD_DIR}"
+envset('PYTHONPATH', ppath)
+
+
+print(f"""
+- env -
+{os.environ['PREFIX']=}
+{sysconfig.get_platform()=}
+{sysconfig.get_config_var('MULTIARCH')=}
+{PYTHONPATH=}
+
+- linking -
+{os.environ['TARGET']=}
+{os.environ['MYS_LD']=}
+{PIC=}
+
+- compiler options -
+{os.environ['CC']=}
+{os.environ['CXX']=}
+{os.environ['CPP']=}
+{EMFLAGS=}
+{os.environ['EXE_SUFFIX']=}
+""")
+
+
+try:
+    from importlib.metadata import distribution
+except ImportError:
+    try:
+        from importlib_metadata import distribution
+    except ImportError:
+        from pkg_resources import load_entry_point
+
+def importlib_load_entry_point(spec, group, name):
+    dist_name, _, _ = spec.partition('==')
+    matches = (
+        entry_point
+        for entry_point in distribution(dist_name).entry_points
+        if entry_point.group == group and entry_point.name == name
+    )
+    return next(matches).load()
+
+globals().setdefault('load_entry_point', importlib_load_entry_point)
+
+if __name__ == '__main__':
+    sys.argv[0] = re.sub(r'(-script\.pyw?|\.exe)?$', '', sys.argv[0])
+    sys.exit(load_entry_point('mys==0.1.0', 'console_scripts', 'mys')())
+

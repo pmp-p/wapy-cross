@@ -1,0 +1,48 @@
+#!/bin/bash
+
+URL_MYS="https://github.com/mys-lang/mys.git"
+
+WD=$(pwd)
+
+
+if [ -d mys ]
+then
+    cd mys
+    git pull --ff-only
+    cd ..
+else
+    git clone $URL_MYS
+fi
+
+/bin/cp -aRfvxpu mys-cross/. mys/
+
+if [ -f wapy-pack/demos/wapy/wapy.wasm ]
+then
+    echo "not rebuilding WAPY"
+else
+    if cd wapy-pack
+    then
+        ./build.sh
+        cd $WD
+    else
+        echo "please get wapy-pack"
+        exit 1
+    fi
+fi
+
+cd mys
+python3.9 -u -B setup.py build
+cd $WD
+
+/bin/cp -aRfvxpu $1 mys/examples/
+
+cd mys/examples/$1
+
+. /data/cross/pydk/emsdk/emsdk_env.sh
+
+/bin/cp -f src/main.py src/main.mys
+rm build/app_*
+
+. ${WD}/wapy-pack/bin/wasi_env.sh
+
+TARGET=wasm32_1pic_wasi python3.9 -u -B ../../mys-cross build ; python3.9 -m http.server

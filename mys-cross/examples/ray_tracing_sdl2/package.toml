@@ -1,0 +1,9 @@
+[package]
+name = "ray_tracing_sdl2"
+version = "0.1.0"
+authors = ["Erik Moqvist <erik.moqvist@gmail.com>", "pmp-p <@>"]
+
+[dependencies]
+math = "*"
+random = "*"
+

@@ -1,0 +1,81 @@
+"""mys-embedded-c++-before-namespace
+#if defined(__EMSCRIPTEN__) || defined(__WASI__)
+    #if defined(__EMSCRIPTEN__)
+        #include "emscripten.h"
+    #endif
+    #include <unistd.h>
+#endif
+"""
+
+def int(f:f64) -> i32:
+    return i32(f)
+
+def int(f:f32) -> i32:
+    return i32(f)
+
+def int(i:i64) -> i32:
+    return i32(i)
+
+def int(i:i32) -> i32:
+    return i32(i)
+
+#==============================
+
+def float(i:i32) -> f32:
+    return f32(i)
+
+def float(i:i64) -> f32:
+    return f32(i)
+
+def float(f:f32) -> f32:
+    return f32(f)
+
+def float(f:f64) -> f32:
+    return f32(f)
+
+#==============================
+
+def sleep(f:f32):
+    pass
+
+
+class MySelf:
+    #display : Display
+    counter : i32
+    loops : i32
+    frames_per_second : f32
+    frametime : f32
+
+
+    def __init__(self):
+        self.counter = 0
+        self.frames_per_second = 60.0
+        #self.loops = int(self.frames_per_second) * 30  # seconds
+        self.frametime = float( f32(1.0) ) / float(self.frames_per_second)
+
+    def get_counter(self) -> i64:
+        return i64(self.counter)
+
+
+
+MYS : MySelf = None
+
+
+def mys_start(keepalive: i64):
+    c"""
+    printf("Press ctrl+shift+i to see debug logs, or go to Menu / [more tools] / [developpers tools]\r\n");
+    chdir("/");
+    """
+    MYS = MySelf()
+    MYS.loops = int(MYS.frames_per_second) * int(keepalive)
+    print( f"stops in {keepalive}*{MYS.frames_per_second} full frames (not seconds)" )
+
+
+def mys_loops() -> i32:
+    MYS.counter = MYS.counter +1
+    sleep( float(MYS.frametime) )
+    MYS.loops = MYS.loops - 1
+    return MYS.loops
+
+def mys_counter() -> i32:
+    return MYS.counter

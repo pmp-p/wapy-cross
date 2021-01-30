@@ -1,0 +1,49 @@
+from math import sqrt
+from .vec import Vec3
+from .ray import Ray
+
+def hit_sphere(center: Vec3, radius: f32, ray: Ray) -> f32:
+    oc = ray.origin - center
+    a = ray.direction.dot(ray.direction)
+    b = 2.0 * oc.dot(ray.direction)
+    c = oc.dot(oc) - radius * radius
+    discriminant = b * b - 4.0 * a * c
+
+    if discriminant < 0.0:
+        return -1.0
+    else:
+        return (-b - sqrt(discriminant)) / 2.0 / a
+
+def color(ray: Ray) -> Vec3:
+    t = hit_sphere(Vec3(0.0, 0.0, -1.0), 0.5, ray)
+
+    if t > 0.0:
+        n = (ray.point_at_parameter(t) - Vec3(0.0, 0.0, -1.0)).unit_vector()
+
+        return Vec3(n.x + 1.0, n.y + 1.0, n.z + 1.0) * 0.5
+
+    unit_direction = ray.direction.unit_vector()
+    t = 0.5 * (unit_direction.y + 1.0)
+
+    return Vec3(1.0, 1.0, 1.0) * (1.0 - t) + Vec3(0.5, 0.7, 1.0) * t
+
+def main():
+    nx, ny = 200, 100
+    print("P3")
+    print(f"{nx} {ny}")
+    print("255")
+    lower_left_corner = Vec3(-2.0, -1.0, -1.0)
+    horizontal = Vec3(4.0, 0.0, 0.0)
+    vertical = Vec3(0.0, 2.0, 0.0)
+    origin = Vec3(0.0, 0.0, 0.0)
+
+    for j in range(ny - 1, -1, -1):
+        for i in range(nx):
+            u, v = f32(i) / f32(nx), f32(j) / f32(ny)
+            ray = Ray(origin,
+                      lower_left_corner + horizontal * u + vertical * v)
+            col = color(ray)
+            ir = i32(255.99 * col.x)
+            ig = i32(255.99 * col.y)
+            ib = i32(255.99 * col.z)
+            print(f"{ir} {ig} {ib}")
