@@ -15,6 +15,59 @@ else
 fi
 
 /bin/cp -aRfvxpu mys-cross/. mys/
+if [ -f mys/mys/lib/fiber.can ]
+then
+    echo fiber patch ok
+else
+    mv mys/mys/lib/fiber.cpp mys/mys/lib/fiber.can
+    cat <<END > mys/mys/lib/fiber.cpp
+#if defined(__EMSCRIPTEN__) || defined(__WASI__)
+    #warning "EMSCRIPTEN/WASI: no fiber support"
+    #define FIBER 0
+
+    #if defined(__WASI__)
+        // https://github.com/davedoesdev/mce/blob/master/cpp/wasm/wasi.cpp
+        #include <stdlib.h>
+
+        pid_t getpid() {
+            return -1;
+        }
+
+        #if __has_feature(cxx_exceptions)
+            #pragma message "WARNING(WASI) : __has_feature(cxx_exceptions) is lying ?"
+        #else
+            #pragma message "WARNING(WASI) : EXCEPTION SUPPORT DISABLED !"
+        #endif
+
+        // Hack exception handling until wasm supports them
+        // https://github.com/WebAssembly/proposals/issues/4
+
+        extern "C" {
+
+            void* __cxa_allocate_exception(size_t) {
+                abort();
+            }
+
+            void __cxa_throw(void*, void*, void*) {
+                abort();
+            }
+
+            void* __cxa_begin_catch(void*) {
+                abort();
+            }
+
+        }
+
+    #endif
+#else
+    #define FIBER 1
+    #include "fiber.can"
+#endif
+END
+fi
+
+> mys/mys/lib/mys/fiber.hpp
+> mys/mys/lib/packages/fiber/src/lib.mys
 
 if [ -f wapy-pack/demos/wapy/wapy.wasm ]
 then
